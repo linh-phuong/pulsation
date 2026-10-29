@@ -1,2 +1,3 @@
 .DS_Store
 toymodels/__pycache__/
+.vscode

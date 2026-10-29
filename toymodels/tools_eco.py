@@ -1,46 +1,55 @@
 import warnings
 import numpy as np
 from scipy.optimize import root
+from scipy.integrate import solve_ivp
+from tools import Config
 
-def foodweb(vars, cg):
+def foodweb(vars, cg, fiH, fiU):
     C, H, U = vars
-    fiH = cg.aH * cg.omegaH * H/(1 + cg.omegaH * cg.ThH * H + cg.omegaU * cg.ThU * U )
-    fiU = cg.aU * cg.omegaU * U/(1 + cg.omegaU * cg.ThU * U + cg.omegaH * cg.ThH * H)
-    dCdt =  (-cg.muC + cg.eH * cg.pCH**(-1/4) * fiH + cg.eU * cg.pCU**(-1/4) * fiU) * C
-    dHdt = (cg.rH * (1 - H/cg.K) - cg.muH)*H - cg.pCH**(-1/4) * fiH * C
-    dUdt = - cg.nu * U - cg.pCU**(-1/4) * fiU * C
+    dCdt =  (-cg.muC + cg.eH * fiH(vars, cg) + cg.eU * fiU(vars, cg)) * C
+    dHdt = (cg.rH * (1 - H/cg.K) - cg.muH)*H - fiH(vars, cg) * C
+    dUdt = - cg.nu * U - fiU(vars, cg) * C
     return [dCdt, dHdt, dUdt]
 
+def holling_ii_H(vars, cg):
+    C, H, U = vars
+    fiH = cg.aH * H/(1 + cg.aH * cg.ThH * H + cg.aU * cg.ThU * U + cg.b * C)
+    return fiH
+def holling_ii_U(vars, cg):
+    C, H, U = vars
+    fiU = cg.aU * U/(1 + cg.aU * cg.ThU * U + cg.aH * cg.ThH * H + cg.b * C)
+    return fiU
 
 def foodweb_jacobian(vars, cg):
     C, H, U = vars
-    D = 1 + cg.omegaH * cg.ThH * H + cg.omegaU * cg.ThU * U  # common denominator of fiH and fiU
-    dCdi = [-cg.muC + cg.aH * cg.eH * H * cg.omegaH/(cg.pCH**(1/4) * D)
-                    + cg.aU * cg.eU * U * cg.omegaU/(cg.pCU**(1/4) * D),
-            C * (-cg.aH * cg.eH * H * cg.ThH * cg.omegaH**2/(cg.pCH**(1/4) * D**2)
-                 - cg.aU * cg.eU * cg.ThH * U * cg.omegaH * cg.omegaU/(cg.pCU**(1/4) * D**2)
-                 + cg.aH * cg.eH * cg.omegaH/(cg.pCH**(1/4) * D)),
-            C * (-cg.aH * cg.eH * H * cg.ThU * cg.omegaH * cg.omegaU/(cg.pCH**(1/4) * D**2)
-                 - cg.aU * cg.eU * cg.ThU * U * cg.omegaU**2/(cg.pCU**(1/4) * D**2)
-                 + cg.aU * cg.eU * cg.omegaU/(cg.pCU**(1/4) * D))]
-    dHdi = [-cg.aH * H * cg.omegaH/(cg.pCH**(1/4) * D),
-            cg.rH * (1 - H/cg.K) - cg.rH * H/cg.K - cg.muH
-                + cg.aH * H * cg.ThH * C * cg.omegaH**2/(cg.pCH**(1/4) * D**2)
-                - cg.aH * C * cg.omegaH/(cg.pCH**(1/4) * D),
-            cg.aH * H * cg.ThU * C * cg.omegaH * cg.omegaU/(cg.pCH**(1/4) * D**2)]
-    dUdi = [-cg.aU * U * cg.omegaU/(cg.pCU**(1/4) * D),
-            cg.aU * cg.ThH * U * C * cg.omegaH * cg.omegaU/(cg.pCU**(1/4) * D**2),
-            -cg.nu + cg.aU * cg.ThU * U * C * cg.omegaU**2/(cg.pCU**(1/4) * D**2)
-                - cg.aU * C * cg.omegaU/(cg.pCU**(1/4) * D)]
+    D = 1 + cg.aH * cg.ThH * H + cg.aU * cg.ThU * U + cg.b * C  # common denominator of fiH and fiU
+    fiH = cg.aH * H/D
+    fiU = cg.aU * U/D
+    # derivatives of the functional responses
+    dfiH_dC = -cg.aH * cg.b * H/D**2
+    dfiH_dH = cg.aH * (1 + cg.aU * cg.ThU * U + cg.b * C)/D**2
+    dfiH_dU = -cg.aH * cg.aU * cg.ThU * H/D**2
+    dfiU_dC = -cg.aU * cg.b * U/D**2
+    dfiU_dH = -cg.aU * cg.aH * cg.ThH * U/D**2
+    dfiU_dU = cg.aU * (1 + cg.aH * cg.ThH * H + cg.b * C)/D**2
+    dCdi = [-cg.muC + cg.eH * fiH + cg.eU * fiU + C * (cg.eH * dfiH_dC + cg.eU * dfiU_dC),
+            C * (cg.eH * dfiH_dH + cg.eU * dfiU_dH),
+            C * (cg.eH * dfiH_dU + cg.eU * dfiU_dU)]
+    dHdi = [-fiH - C * dfiH_dC,
+            cg.rH * (1 - 2 * H/cg.K) - cg.muH - C * dfiH_dH,
+            -C * dfiH_dU]
+    dUdi = [-fiU - C * dfiU_dC,
+            -C * dfiU_dH,
+            -cg.nu - C * dfiU_dU]
     return np.array([dCdi, dHdi, dUdi])
 
-def followpars(system, commonpars, varypars, varyvals, initeq):
+def followpars(system,fiH, fiU, commonpars, varypars, varyvals, initeq):
     eqlist = ()
     ef_varypar = ()
     pars = commonpars.clone_me()
     for i in varyvals:
         pars[varypars] = i
-        eq = root(system, initeq, args=(pars,))
+        eq = root(lambda y: system(y, pars, fiH, fiU), initeq)
         if eq.success:
             eqlist += (eq.x,)
             ef_varypar += (i,)
@@ -50,7 +59,7 @@ def followpars(system, commonpars, varypars, varyvals, initeq):
     return ef_varypar, np.array(eqlist)
 
 
-def followpars_with_eqnature(system, systemJ, commonpars, varypars,
+def followpars_with_eqnature(system, fiH, fiU, systemJ, commonpars, varypars,
                               varyvals, initeq):
     eqlist = ()
     ef_varypar = ()
@@ -59,7 +68,7 @@ def followpars_with_eqnature(system, systemJ, commonpars, varypars,
     pars = commonpars.clone_me()
     for i in varyvals:
         pars[varypars] = i
-        eq = root(system, initeq, args=(pars,))
+        eq = root(lambda y: system(y, pars, fiH, fiU), initeq)
         if eq.success:
             eqlist += (eq.x,)
             ef_varypar += (i,)
@@ -71,7 +80,10 @@ def followpars_with_eqnature(system, systemJ, commonpars, varypars,
             if np.all(re < 0):
                 label, col = ('StableNode', 'k') if np.all(im == 0) else ('StableFocus', 'lightgray')
             elif np.any(re > 0):
-                label, col = ('Unstable', 'C3')
+                if np.any((re > 0) & (np.abs(im) > 1e-12)):
+                    label, col = ('UnstableFocus', 'C3')
+                else:
+                    label, col = ('Saddle', 'C1')
             else:
                 label, col = ('unknown', 'C0')
             eqnaturelist += (label,)
@@ -79,3 +91,22 @@ def followpars_with_eqnature(system, systemJ, commonpars, varypars,
         else:
             warnings.warn(f"Root finding failed for {varypars}={i}.")
     return ef_varypar, np.array(eqlist), eqnaturelist, eqnatcollist
+
+
+def simulation_with_pulse(system, pulse_freq, pulse_amp, Tmax, y0, pars, fiH, fiU):
+    pp = pulse_freq
+    ts = 0
+    sol_cb = []
+    time = []
+    while ts < Tmax:
+        tspan = np.linspace(ts, pp, 100)
+        sol = solve_ivp(lambda t, y: system(y, pars, fiH, fiU), [ts, pp], y0,
+                            t_eval=tspan)
+        sol_cb.append(sol.y[:, :-1])
+        time.append(sol.t[:-1])
+        ts = pp
+        pp = pp + pulse_freq        
+        s = 800
+        y0 = sol.y[:, -1].copy()
+        y0[-1] = y0[-1] + np.random.gamma(shape=pulse_amp**2/s**2, scale=s**2/pulse_amp)
+    return Config(dict(y = np.hstack(sol_cb).T, t = np.concatenate(time)))
