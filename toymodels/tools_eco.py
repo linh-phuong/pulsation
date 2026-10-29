@@ -52,6 +52,33 @@ def foodweb_jacobian_holling_ii(vars, cg):
             -cg.nu - C * dfiU_dU]
     return np.array([dCdi, dHdi, dUdi])
 
+def foodweb_jacobian_holling_iii(vars, cg):
+    C, H, U = vars
+    Hw = H**cg.wH
+    Uw = U**cg.wU
+    dHw_dH = cg.wH * H**(cg.wH - 1)   # derivative of H**wH
+    dUw_dU = cg.wU * U**(cg.wU - 1)   # derivative of U**wU
+    D = 1 + cg.aH * cg.ThH * Hw + cg.aU * cg.ThU * Uw + cg.b * C  # common denominator of fiH and fiU
+    fiH = cg.aH * Hw/D
+    fiU = cg.aU * Uw/D
+    # derivatives of the functional responses
+    dfiH_dC = -cg.aH * cg.b * Hw/D**2
+    dfiH_dH = cg.aH * dHw_dH * (1 + cg.aU * cg.ThU * Uw + cg.b * C)/D**2
+    dfiH_dU = -cg.aH * cg.aU * cg.ThU * Hw * dUw_dU/D**2
+    dfiU_dC = -cg.aU * cg.b * Uw/D**2
+    dfiU_dH = -cg.aU * cg.aH * cg.ThH * Uw * dHw_dH/D**2
+    dfiU_dU = cg.aU * dUw_dU * (1 + cg.aH * cg.ThH * Hw + cg.b * C)/D**2
+    dCdi = [-cg.muC + cg.eH * fiH + cg.eU * fiU + C * (cg.eH * dfiH_dC + cg.eU * dfiU_dC),
+            C * (cg.eH * dfiH_dH + cg.eU * dfiU_dH),
+            C * (cg.eH * dfiH_dU + cg.eU * dfiU_dU)]
+    dHdi = [-fiH - C * dfiH_dC,
+            cg.rH * (1 - 2 * H/cg.K) - cg.muH - C * dfiH_dH,
+            -C * dfiH_dU]
+    dUdi = [-fiU - C * dfiU_dC,
+            -C * dfiU_dH,
+            -cg.nu - C * dfiU_dU]
+    return np.array([dCdi, dHdi, dUdi])
+
 def followpars(system,fiH, fiU, commonpars, varypars, varyvals, initeq):
     eqlist = ()
     ef_varypar = ()
