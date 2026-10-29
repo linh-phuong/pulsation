@@ -20,7 +20,16 @@ def holling_ii_U(vars, cg):
     fiU = cg.aU * U/(1 + cg.aU * cg.ThU * U + cg.aH * cg.ThH * H + cg.b * C)
     return fiU
 
-def foodweb_jacobian(vars, cg):
+def holling_iii_H(vars, cg):
+    C, H, U = vars
+    fiH = cg.aH * (H**cg.wH)/(1 + cg.aH * cg.ThH * (H**cg.wH) + cg.aU * cg.ThU * (U**cg.wU) + cg.b * C)
+    return fiH
+def holling_iii_U(vars, cg):
+    C, H, U = vars
+    fiU = cg.aU * (U**cg.wU)/(1 + cg.aU * cg.ThU * (U**cg.wU) + cg.aH * cg.ThH * (H**cg.wH) + cg.b * C)
+    return fiU
+
+def foodweb_jacobian_holling_ii(vars, cg):
     C, H, U = vars
     D = 1 + cg.aH * cg.ThH * H + cg.aU * cg.ThU * U + cg.b * C  # common denominator of fiH and fiU
     fiH = cg.aH * H/D
