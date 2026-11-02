@@ -146,3 +146,57 @@ def simulation_with_pulse(system, pulse_freq, pulse_amp, Tmax, y0, pars, fiH, fi
         y0 = sol.y[:, -1].copy()
         y0[-1] = y0[-1] + np.random.gamma(shape=pulse_amp**2/s**2, scale=s**2/pulse_amp)
     return Config(dict(y = np.hstack(sol_cb).T, t = np.concatenate(time)))
+
+
+def foodweb_switching_special(vars, cg, fiH = None, fiU = None):
+    C, H, U = vars
+    u = 1/(1 - cg.w)
+    popt = (cg.aH * H)**u/((cg.aH * H )**u + (cg.aU * U)**u)
+    faH = cg.aH * popt**cg.w
+    faU = cg.aU * (1 - popt)**cg.w
+    fiH = faH * H/(1 + faH * cg.Th *  H + faU * cg.Th * U + cg.b * C)
+    fiU = faU * U/(1 + faU * cg.Th * U + faH * cg.Th * H + cg.b * C)
+    dCdt =  (-cg.muC + cg.e * fiH + cg.e * fiU) * C
+    dHdt = (cg.rH * (1 - H/cg.K) - cg.muH)*H - fiH * C
+    dUdt = - cg.nu * U - fiU * C
+    return [dCdt, dHdt, dUdt]
+
+def foodweb_jacobian_switching_special(vars, cg):
+    C, H, U = vars
+    u = 1/(1 - cg.w)
+    S = (cg.aH * H)**u + (cg.aU * U)**u
+    popt = (cg.aH * H)**u/S
+    pH = cg.aH**u * H**(u - 1)/S   
+    qU = cg.aU**u * U**(u - 1)/S   
+    faH = cg.aH * popt**cg.w
+    faU = cg.aU * (1 - popt)**cg.w
+    gH = faH * H                   
+    gU = faU * U                   
+    D = 1 + cg.Th * (gH + gU) + cg.b * C 
+    fiH = gH/D
+    fiU = gU/D
+    
+    dgH_dH = faH * (1 + cg.w * u * (1 - popt))
+    dgH_dU = -cg.w * u * qU * gH
+    dgU_dH = -cg.w * u * pH * gU
+    dgU_dU = faU * (1 + cg.w * u * popt)
+    
+    dD_dH = cg.Th * (dgH_dH + dgU_dH)
+    dD_dU = cg.Th * (dgH_dU + dgU_dU)
+    
+    dfiH_dC = -cg.b * fiH/D
+    dfiH_dH = (dgH_dH - fiH * dD_dH)/D
+    dfiH_dU = (dgH_dU - fiH * dD_dU)/D
+    dfiU_dC = -cg.b * fiU/D
+    dfiU_dH = (dgU_dH - fiU * dD_dH)/D
+    dfiU_dU = (dgU_dU - fiU * dD_dU)/D
+    dCdi = [-cg.muC + cg.e * fiH + cg.e * fiU + C * cg.e * (dfiH_dC + dfiU_dC),
+            C * cg.e * (dfiH_dH + dfiU_dH),
+            C * cg.e * (dfiH_dU + dfiU_dU)]
+    dHdi = [-fiH - C * dfiH_dC,
+            cg.rH * (1 - 2 * H/cg.K) - cg.muH - C * dfiH_dH,
+            -C * dfiH_dU]
+    dUdi = [-fiU - C * dfiU_dC,
+            -C * dfiU_dH,
+            -cg.nu - C * dfiU_dU]
+    return np.array([dCdi, dHdi, dUdi])
